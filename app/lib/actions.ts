@@ -7,34 +7,52 @@ import { redirect } from 'next/navigation';
 
 const FormSchema = z.object({
   id: z.string(),
-  customerId: z.string(),
-  amount: z.coerce.number(),
-  status: z.enum(['pending', 'paid']),
+  customerId: z.string({
+    invalid_type_error: 'Please select a customer',
+  }),
+  amount: z.coerce
+    .number()
+    .gt(0, { message: 'Please enter an amount greater than $0.' }),
+  status: z.enum(['pending', 'paid'], {
+    invalid_type_error: 'Please select an invoice status',
+  }),
   date: z.string(),
 });
 
 const CreateAndUpdateInvoice = FormSchema.omit({ id: true, date: true });
 
-export async function createInvoice(formData: FormData) {
+export type State = {
+  errors?: {
+    customerId?: string[];
+    amount?: string[];
+    status?: string[];
+  };
+  message?: string | null;
+};
+
+export async function createInvoice(prevState: State, formData: FormData) {
   const result = CreateAndUpdateInvoice.safeParse(
     Object.fromEntries(formData.entries()),
   );
 
-  if (result.success) {
-    const { amount, customerId, status } = result.data;
-    const amountInCent = amount * 100;
-    const date = new Date().toISOString().split('T')[0];
+  if (!result.success) {
+    return {
+      errors: result.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Create Invoice.',
+    };
+  }
 
-    await sql`
+  const { amount, customerId, status } = result.data;
+  const amountInCent = amount * 100;
+  const date = new Date().toISOString().split('T')[0];
+
+  await sql`
       INSERT INTO Invoices (customerId, amount, status, date)
       VALUES (${customerId}, ${amountInCent}, ${status}, ${date})
     `;
 
-    revalidatePath('/dashboard/invoices');
-    redirect('/dashboard/invoices');
-  } else {
-    console.log('something went wrong!');
-  }
+  revalidatePath('/dashboard/invoices');
+  redirect('/dashboard/invoices');
 }
 
 export async function updateInvoice(id: string, formData: FormData) {
